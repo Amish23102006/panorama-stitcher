@@ -1,0 +1,9 @@
+Panorama Stitching Run Summary
+================================
+Images used   : 2
+Images skipped: 0
+Total time    : 0.09s
+Output size   : 895x403
+
+Pairwise matching quality:
+  [0 -> 1] good_matches=33 inliers=19 (57.6%) reprojection_error=0.09px

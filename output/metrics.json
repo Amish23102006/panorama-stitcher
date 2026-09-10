@@ -1,0 +1,34 @@
+{
+  "generated_at": "2026-09-10T07:02:32.215225+00:00",
+  "config": {
+    "detector": "sift",
+    "max_features": 4000,
+    "lowe_ratio": 0.75,
+    "min_match_count": 10,
+    "ransac_reproj_threshold": 4.0,
+    "ransac_max_iters": 2000,
+    "blend_feather_width": 40,
+    "max_output_dimension": 6000,
+    "working_max_dim": 1600,
+    "log_level": "INFO"
+  },
+  "summary": {
+    "images_used": 2,
+    "images_skipped": 0,
+    "total_time_seconds": 0.089,
+    "panorama_resolution": {
+      "width": 895,
+      "height": 403
+    }
+  },
+  "pairs": [
+    {
+      "image_a": 0,
+      "image_b": 1,
+      "good_matches": 33,
+      "inliers": 19,
+      "inlier_ratio": 0.5758,
+      "mean_reprojection_error_px": 0.0928
+    }
+  ]
+}
