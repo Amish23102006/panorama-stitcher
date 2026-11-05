@@ -1,0 +1,110 @@
+name: Daily test run (backup)
+
+# Backup for the daily commit in medagent. Runs the test suite against the latest
+# dependencies and logs the result to status/test-log.md, but only commits if
+# Amish has no commit yet today (IST) in any public repo. Runs before 18:30 UTC
+# so the UTC and IST dates match on the contribution graph.
+on:
+  schedule:
+    - cron: "41 6 * * *" # 06:41 UTC = 12:11 IST
+    - cron: "23 12 * * *" # 12:23 UTC = 17:53 IST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Commit even if there is already a commit today"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-tests
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a commit today
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          today=$(TZ=Asia/Kolkata date +%F)
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+          count=$(gh api -X GET search/commits \
+            -f q="author:Amish23102006 author-date:>=${today}T00:00:00+05:30" \
+            --jq .total_count 2>/dev/null || echo 0)
+          logged=false
+          if [ -f status/test-log.md ] && grep -q "^| $today |" status/test-log.md; then logged=true; fi
+          echo "Commits today: $count, already logged here: $logged"
+          if [ "${{ inputs.force }}" = "true" ] && [ "$logged" = "false" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$logged" = "true" ] || [ "${count:-0}" -gt 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+
+      - name: Run tests
+        id: tests
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set +e
+          python -m pytest tests/ -q > pytest.out 2>&1
+          code=$?
+          cat pytest.out
+          summary=$(tail -n 1 pytest.out | sed 's/=//g; s/^ *//; s/ *$//; s/|/\//g')
+          [ $code -eq 0 ] && result=pass || result=FAIL
+          cv=$(python -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "?")
+          np=$(python -c "import numpy; print(numpy.__version__)" 2>/dev/null || echo "?")
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+
+          f=status/test-log.md
+          mkdir -p status
+          if [ ! -f "$f" ]; then
+            {
+              echo "# Daily test log"
+              echo
+              echo "Test suite run against the latest OpenCV and NumPy by \`.github/workflows/daily-tests.yml\`,"
+              echo "to catch breakage from dependency updates."
+              echo
+              echo "| Date (IST) | Result | pytest summary | Python | OpenCV | NumPy |"
+              echo "|---|---|---|---|---|---|"
+            } > "$f"
+          fi
+          echo "| ${{ steps.guard.outputs.today }} | $result | $summary | $(python -V | cut -d' ' -f2) | $cv | $np |" >> "$f"
+
+      - name: Commit log
+        if: always() && steps.guard.outputs.skip != 'true'
+        run: |
+          [ -f status/test-log.md ] || exit 0
+          git config user.name "Amish Chaturvedi"
+          git config user.email "291602092+Amish23102006@users.noreply.github.com"
+          git add status/test-log.md
+          git commit -m "chore(status): daily test run ${{ steps.guard.outputs.today }}" || exit 0
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 10
+          done
+          exit 1
+
+      - name: Fail if tests failed
+        if: steps.guard.outputs.skip != 'true' && steps.tests.outputs.result != 'pass'
+        run: exit 1
